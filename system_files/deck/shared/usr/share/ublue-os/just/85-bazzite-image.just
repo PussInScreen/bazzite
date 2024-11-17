@@ -89,26 +89,6 @@ enable-ryzenadj-max-performance:
     sudo udevadm control --reload-rules
     echo 'installation complete. Reboot to take effect'
 
-# toggles password prompt feedback in terminal, where sudo password prompts will display asterisks when enabled
-toggle-password-feedback ACTION="":
-    #!/usr/bin/bash
-    PWFEEDBACK_FILE="/etc/sudoers.d/enable-pwfeedback"
-    OPTION={{ ACTION }}
-
-    if [ "$OPTION" = "on" ]; then
-      echo 'Defaults pwfeedback' | sudo tee $PWFEEDBACK_FILE
-      echo "enabled, restart terminal to see changes"
-    elif [ "$OPTION" = "off" ]; then
-      sudo rm -f $PWFEEDBACK_FILE
-      echo "disabled pwfeedback. restart your terminal to see changes"
-    elif sudo test -f $PWFEEDBACK_FILE; then
-      sudo rm -f $PWFEEDBACK_FILE
-      echo "disabled pwfeedback. restart your terminal to see changes"
-    else
-      echo 'Defaults pwfeedback' | sudo tee $PWFEEDBACK_FILE
-      echo "enabled, restart terminal to see changes"
-    fi
-
 # disables ryzenadj --max-performance on AC power
 disable-ryzenadj-max-performance:
     #/bin/bash
@@ -123,19 +103,21 @@ restore-input-remapper:
     sed -i '/NoDisplay=true/d' ~/.local/share/applications/input-remapper-gtk.desktop
 
 # Install firmware files needed for ayaneo and orangepi speakers
-install-speaker-firmare:
+install-speaker-firmware ACTION="":
     #!/bin/bash
-    BASE_DIR="https://raw.githubusercontent.com/hhd-dev/hwinfo/master/firmware/"
-    INSTALL_DIR="/usr/local/firmware"
-    if [ ! -d "$INSTALL_DIR" ]; then
-      sudo mkdir -p $INSTALL_DIR
+    source /usr/lib/ujust/ujust.sh
+    OPTION={{ ACTION }}
+    FIRMWARE_SCRIPT="https://raw.githubusercontent.com/hhd-dev/hwinfo/refs/heads/master/firmware/bazzite-speaker.sh"
+    curl -o "/tmp/bazzite-speaker.sh" "$FIRMWARE_SCRIPT" && cat /tmp/bazzite-speaker.sh | pygmentize -l bash -O style=emacs
+    echo ""
+    echo "Run the above script using elevated permissions?"
+    if [ "$OPTION" == "" ]; then
+      OPTION=$(Choose "Yes" "No")
     fi
-    sudo wget -O $INSTALL_DIR/aw87xxx_acf_air1s.bin    $BASE_DIR/awinic/aw87xxx_acf_air1s.bin
-    sudo wget -O $INSTALL_DIR/aw87xxx_acf_airplus.bin  $BASE_DIR/awinic/aw87xxx_acf_airplus.bin
-    sudo wget -O $INSTALL_DIR/aw87xxx_acf_flip.bin     $BASE_DIR/awinic/aw87xxx_acf_flip.bin
-    sudo wget -O $INSTALL_DIR/aw87xxx_acf_kun.bin      $BASE_DIR/awinic/aw87xxx_acf_kun.bin
-    sudo wget -O $INSTALL_DIR/aw87xxx_acf_minipro.bin  $BASE_DIR/awinic/aw87xxx_acf_minipro.bin
-    sudo wget -O $INSTALL_DIR/aw87xxx_acf_orangepi.bin $BASE_DIR/awinic/aw87xxx_acf_orangepi.bin
+    if [[ "${OPTION,,}" =~ ^yes || "${OPTION,,}" =~ ^-y ]]; then
+      sudo bash /tmp/bazzite-speaker.sh
+    fi
+    rm /tmp/bazzite-speaker.sh
 
 # Install hhd main branch locally until reboot, helpful for hhd testing and debugging. (rename to install-hhd-dev if we unhide)
 _hhd-dev:
