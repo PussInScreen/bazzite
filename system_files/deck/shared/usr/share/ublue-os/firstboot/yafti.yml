@@ -31,8 +31,7 @@ screens:
           description: A self-hosted game stream host for Moonlight
           default: false
           packages:
-          - Install Sunshine: ujust setup-sunshine install
-          - Autostart Sunshine: ujust setup-sunshine autostart
+          - Enable Sunshine: ujust setup-sunshine enable
         Resilio Sync:
           description: A file synchronization utility powered by BitTorrent
           default: false
@@ -60,7 +59,7 @@ screens:
           default: true
           packages:
           - Enable Updates: sudo -A ujust enable-deck-bios-firmware-updates
-        Visible Password Aestriks:
+        Visible Password Asterisks:
           description: Toggles pwfeedback on.
           default: true
           packages:
