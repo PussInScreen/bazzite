@@ -2,13 +2,14 @@ ARG BASE_IMAGE_NAME="${BASE_IMAGE_NAME:-kinoite}"
 ARG BASE_IMAGE_FLAVOR="${BASE_IMAGE_FLAVOR:-main}"
 ARG IMAGE_FLAVOR="${IMAGE_FLAVOR:-main}"
 ARG NVIDIA_FLAVOR="${NVIDIA_FLAVOR:-nvidia}"
+ARG NVIDIA_BASE="${NVIDIA_BASE:-bazzite}"
 ARG KERNEL_FLAVOR="${KERNEL_FLAVOR:-bazzite}"
 ARG KERNEL_VERSION="${KERNEL_VERSION:-6.12.5-204.bazzite.fc41.x86_64}"
 ARG IMAGE_BRANCH="${IMAGE_BRANCH:-main}"
 ARG SOURCE_IMAGE="${SOURCE_IMAGE:-$BASE_IMAGE_NAME-$BASE_IMAGE_FLAVOR}"
 ARG BASE_IMAGE="ghcr.io/ublue-os/${SOURCE_IMAGE}"
 ARG FEDORA_MAJOR_VERSION="${FEDORA_MAJOR_VERSION:-41}"
-ARG JUPITER_FIRMWARE_VERSION="${JUPITER_FIRMWARE_VERSION:-jupiter-20240917.1}"
+ARG JUPITER_FIRMWARE_VERSION="${JUPITER_FIRMWARE_VERSION:-jupiter-20241205.1}"
 ARG SHA_HEAD_SHORT="${SHA_HEAD_SHORT}"
 ARG VERSION_TAG="${VERSION_TAG}"
 ARG VERSION_PRETTY="${VERSION_PRETTY}"
@@ -23,12 +24,13 @@ ARG IMAGE_NAME="${IMAGE_NAME:-bazzite}"
 ARG IMAGE_VENDOR="${IMAGE_VENDOR:-ublue-os}"
 ARG IMAGE_FLAVOR="${IMAGE_FLAVOR:-main}"
 ARG NVIDIA_FLAVOR="${NVIDIA_FLAVOR:-nvidia}"
+ARG NVIDIA_BASE="${NVIDIA_BASE:-bazzite}"
 ARG KERNEL_FLAVOR="${KERNEL_FLAVOR:-bazzite}"
 ARG KERNEL_VERSION="${KERNEL_VERSION:-6.12.5-204.bazzite.fc41.x86_64}"
 ARG IMAGE_BRANCH="${IMAGE_BRANCH:-main}"
 ARG BASE_IMAGE_NAME="${BASE_IMAGE_NAME:-kinoite}"
 ARG FEDORA_MAJOR_VERSION="${FEDORA_MAJOR_VERSION:-41}"
-ARG JUPITER_FIRMWARE_VERSION="${JUPITER_FIRMWARE_VERSION:-jupiter-20240917.1}"
+ARG JUPITER_FIRMWARE_VERSION="${JUPITER_FIRMWARE_VERSION:-jupiter-20241205.1}"
 ARG SHA_HEAD_SHORT="${SHA_HEAD_SHORT}"
 ARG VERSION_TAG="${VERSION_TAG}"
 ARG VERSION_PRETTY="${VERSION_PRETTY}"
@@ -272,7 +274,9 @@ RUN --mount=type=cache,dst=/var/cache/rpm-ostree \
     curl -Lo /tmp/linux-firmware-neptune/cs35l41-dsp1-spk-cali.wmfw https://gitlab.com/evlaV/linux-firmware-neptune/-/raw/"${JUPITER_FIRMWARE_VERSION}"/cs35l41-dsp1-spk-cali.wmfw && \
     curl -Lo /tmp/linux-firmware-neptune/cs35l41-dsp1-spk-prot.bin https://gitlab.com/evlaV/linux-firmware-neptune/-/raw/"${JUPITER_FIRMWARE_VERSION}"/cs35l41-dsp1-spk-prot.bin && \
     curl -Lo /tmp/linux-firmware-neptune/cs35l41-dsp1-spk-prot.wmfw https://gitlab.com/evlaV/linux-firmware-neptune/-/raw/"${JUPITER_FIRMWARE_VERSION}"/cs35l41-dsp1-spk-prot.wmfw && \
-    xz --check=crc32 /tmp/linux-firmware-neptune/cs35l41-dsp1-spk-{cali.bin,cali.wmfw,prot.bin,prot.wmfw} && \
+    curl -Lo /tmp/linux-firmware-neptune/rtl8822cu_fw.bin https://gitlab.com/evlaV/linux-firmware-neptune/-/raw/"${JUPITER_FIRMWARE_VERSION}"/rtl_bt/rtl8822cu_fw.bin && \
+    xz --check=crc32 /tmp/linux-firmware-neptune/* && \
+    mv -vf /tmp/linux-firmware-neptune/rtl8822cu_fw.bin.xz /usr/lib/firmware/rtl_bt/rtl8822cu_fw.bin.xz && \
     mv -vf /tmp/linux-firmware-neptune/* /usr/lib/firmware/cirrus/ && \
     rm -rf /tmp/linux-firmware-neptune && \
     mkdir -p /tmp/linux-firmware-galileo && \
@@ -309,6 +313,21 @@ RUN --mount=type=cache,dst=/var/cache/rpm-ostree \
         git clone https://gitlab.com/asus-linux/firmware.git --depth 1 /tmp/asus-firmware && \
         cp -rf /tmp/asus-firmware/* /usr/lib/firmware/ && \
         rm -rf /tmp/asus-firmware \
+    ; elif [[ "${IMAGE_FLAVOR}" == "surface" ]]; then \
+        curl -Lo /etc/yum.repos.d/linux-surface.repo https://pkg.surfacelinux.com/fedora/linux-surface.repo && \
+        rpm-ostree override remove \
+            libwacom \
+            libwacom-data \
+            --install libwacom-surface \
+            --install libwacom-surface-data && \
+        rpm-ostree install \
+            iptsd \
+            libcamera \
+            libcamera-tools \
+            libcamera-gstreamer \
+            libcamera-ipa \
+            pipewire-plugin-libcamera && \
+        sed -i 's@enabled=1@enabled=0@g' /etc/yum.repos.d/linux-surface.repo \
     ; fi && \
     /usr/libexec/containerbuild/cleanup.sh && \
     ostree container commit
@@ -812,6 +831,8 @@ RUN rm -f /etc/profile.d/toolbox.sh && \
     curl -Lo /usr/bin/waydroid-choose-gpu https://raw.githubusercontent.com/KyleGospo/waydroid-scripts/main/waydroid-choose-gpu.sh && \
     chmod +x /usr/bin/waydroid-choose-gpu && \
     curl -Lo /usr/lib/sysctl.d/99-bore-scheduler.conf https://github.com/CachyOS/CachyOS-Settings/raw/master/usr/lib/sysctl.d/99-bore-scheduler.conf && \
+    curl -Lo /etc/distrobox/docker.ini https://github.com/ublue-os/toolboxes/raw/refs/heads/main/apps/docker/distrobox.ini && \
+    curl -Lo /etc/distrobox/incus.ini https://github.com/ublue-os/toolboxes/raw/refs/heads/main/apps/docker/incus.ini && \
     /usr/libexec/containerbuild/image-info && \
     /usr/libexec/containerbuild/build-initramfs && \
     /usr/libexec/containerbuild/cleanup.sh && \
@@ -825,6 +846,7 @@ ARG IMAGE_NAME="${IMAGE_NAME:-bazzite-deck}"
 ARG IMAGE_VENDOR="${IMAGE_VENDOR:-ublue-os}"
 ARG IMAGE_FLAVOR="${IMAGE_FLAVOR:-main}"
 ARG NVIDIA_FLAVOR="${NVIDIA_FLAVOR:-nvidia}"
+ARG NVIDIA_BASE="${NVIDIA_BASE:-bazzite}"
 ARG KERNEL_FLAVOR="${KERNEL_FLAVOR:-bazzite}"
 ARG KERNEL_VERSION="${KERNEL_VERSION:-6.12.5-204.bazzite.fc41.x86_64}"
 ARG IMAGE_BRANCH="${IMAGE_BRANCH:-main}"
@@ -991,12 +1013,14 @@ RUN /usr/libexec/containerbuild/image-info && \
 
 FROM ghcr.io/ublue-os/akmods-${NVIDIA_FLAVOR}:${KERNEL_FLAVOR}-${FEDORA_MAJOR_VERSION}-${KERNEL_VERSION} AS nvidia-akmods
 
-FROM bazzite AS bazzite-nvidia
+FROM ${NVIDIA_BASE} AS bazzite-nvidia
 
 ARG IMAGE_NAME="${IMAGE_NAME:-bazzite-nvidia}"
 ARG IMAGE_VENDOR="${IMAGE_VENDOR:-ublue-os}"
 ARG IMAGE_FLAVOR="${IMAGE_FLAVOR:-nvidia}"
 ARG NVIDIA_FLAVOR="${NVIDIA_FLAVOR:-nvidia}"
+ARG NVIDIA_BASE="${NVIDIA_BASE:-bazzite}"
+ARG NVIDIA_NAME=${NVIDIA_NAME:-bazzite-nvidia}
 ARG KERNEL_FLAVOR="${KERNEL_FLAVOR:-bazzite}"
 ARG KERNEL_VERSION="${KERNEL_VERSION:-6.12.5-204.bazzite.fc41.x86_64}"
 ARG IMAGE_BRANCH="${IMAGE_BRANCH:-main}"
