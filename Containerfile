@@ -197,6 +197,11 @@ RUN --mount=type=cache,dst=/var/cache/rpm-ostree \
     --from repo=updates \
         libxcrypt \
         || true && \
+    rpm-ostree override replace \
+    --experimental \
+    --from repo=updates \
+        SDL2 \
+        || true && \
     if grep -q "kinoite" <<< "${BASE_IMAGE_NAME}"; then \
         rpm-ostree override replace \
         --experimental \
@@ -999,7 +1004,11 @@ RUN /usr/libexec/containerbuild/image-info && \
     systemctl enable cec-onpoweroff.service && \
     systemctl enable cec-onsleep.service && \
     systemctl enable bazzite-tdpfix.service && \
+    systemctl enable bazzite-grub-boot-success.timer && \
+    systemctl enable bazzite-grub-boot-success.service && \
     systemctl --global disable sdgyrodsu.service && \
+    systemctl --global disable grub-boot-success.timer && \
+    systemctl disable grub-boot-indeterminate.service && \
     systemctl disable input-remapper.service && \
     systemctl disable ublue-update.timer && \
     systemctl disable jupiter-fan-control.service && \

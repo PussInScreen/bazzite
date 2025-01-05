@@ -10,7 +10,7 @@ Subject: [NA] add dev script
 
 diff --git a/sync.sh b/sync.sh
 new file mode 100755
-index 0000000..878bf6c
+index 0000000..676d652
 --- /dev/null
 +++ b/sync.sh
 @@ -0,0 +1,21 @@
@@ -30,7 +30,7 @@ index 0000000..878bf6c
 +scp build/src/gamescope ${HOST}:gamescope
 +
 +ssh $HOST /bin/bash << EOF
-+    sudo rpm-ostree usroverlay --hotfix
++    sudo rpm-ostree usroverlay
 +    sudo mv ~/gamescope /usr/bin/gamescope
 +    bazzite-session-select gamescope
 +    # sudo reboot
