@@ -219,10 +219,6 @@ disable-automounting:
         sudo -A systemctl disable ublue-os-media-automount.service
     fi
 
-# Enable support for DisplayLink
-enable-displaylink:
-    systemctl enable --now displaylink.service
-
 # Enable support for Tailscale
 enable-tailscale:
     systemctl enable --now tailscaled.service
@@ -368,7 +364,7 @@ configure-snapshots ACTION="":
       /usr/libexec/bazzite-snapper-config wipe
     fi
 
-# Bazzite CLI mod for bluefin style cli-bing (modfied copy of https://github.com/ublue-os/bluefin/blob/faf7303afa6f8d6e747940c1d1ba63c6d2d43c80/system_files/shared/usr/libexec/ublue-bling.sh#L62)
+# Enable a Bluefin-style CLI experience
 bazzite-cli:
     #!/usr/bin/bash
     #shellcheck disable=SC2154
@@ -564,7 +560,7 @@ toggle-password-feedback ACTION="":
       echo "enabled, restart terminal to see changes"
     fi
 
-# Install Bazzite Buddy plugin to easily access changelogs in game mode!
+# Install Bazzite Buddy plugin to easily access changelogs in game mode
 get-decky-bazzite-buddy:
     #!/bin/bash
     REPO_OWNER="xXJSONDeruloXx"
