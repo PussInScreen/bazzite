@@ -4,12 +4,14 @@
 # Under NO CIRCUMSTANCES should this workflow be automatically triggered.
 name: Retag image
 
+env:
+  REPO_OWNER: ${{ github.repository_owner }}
+
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: true
 
-permissions:
-  packages: write
+permissions: {}
 
 on:
   workflow_dispatch:
@@ -36,13 +38,20 @@ jobs:
     runs-on: ubuntu-latest
     if: inputs.old_tag != ''
     needs: [safeguard-timer]
+    permissions:
+      packages: write
     steps:
+      # The image registry name must be lower-case, but GitHub usernames can be capitalized.
+      - name: Get lower-case equivalent of the repository owner's username
+        id: repo_owner_case
+        run: echo "lowercase=${REPO_OWNER,,}" >> "$GITHUB_OUTPUT"
+
       - uses: Zeglius/ghcr-oci-retagger@1e08f1dac27d25efe1377d9a35f133731bf3d986
         env:
-          ver: "42"
+          ver: "43"
         with:
           GITHUB_TOKEN: ${{ github.token }}
-          PREFIX: ghcr.io/${{ github.repository_owner }}/
+          PREFIX: ghcr.io/${{ steps.repo_owner_case.outputs.lowercase }}/
           TAG_MAPPINGS: |-
             bazzite:${{ inputs.old_tag }}                           => bazzite:latest,stable,${{ env.ver }}
             bazzite-deck:${{ inputs.old_tag }}                      => bazzite-deck:latest,stable,${{ env.ver }}
@@ -54,8 +63,3 @@ jobs:
             bazzite-gnome-nvidia-open:${{ inputs.old_tag }}         => bazzite-gnome-nvidia-open:latest,stable,${{ env.ver }}
             bazzite-nvidia:${{ inputs.old_tag }}                    => bazzite-nvidia:latest,stable,${{ env.ver }}
             bazzite-nvidia-open:${{ inputs.old_tag }}               => bazzite-nvidia-open:latest,stable,${{ env.ver }}
-
-            bazzite-asus-nvidia-open:${{ inputs.old_tag }}          => bazzite-asus-nvidia-open:latest,stable,${{ env.ver }}
-            bazzite-asus-nvidia:${{ inputs.old_tag }}               => bazzite-asus-nvidia:latest,stable,${{ env.ver }}
-            bazzite-gnome-asus-nvidia-open:${{ inputs.old_tag }}    => bazzite-gnome-asus-nvidia-open:latest,stable,${{ env.ver }}
-            bazzite-gnome-asus-nvidia:${{ inputs.old_tag }}         => bazzite-gnome-asus-nvidia:latest,stable,${{ env.ver }}

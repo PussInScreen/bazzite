@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Sanity checks:
 if (( $# == 0 )); then
 	echo -e "No arguments provided.\n\nUsage: env GAMECLASS='<executable>=<window class>' gameclass \033[1m[COMMAND]\033[0m..."
 	exit 1
@@ -10,8 +11,12 @@ else
 	fi
 fi
 
-EXE="$( echo "$GAMECLASS" | awk 'BEGIN { FS = "=" } ; { print $1 }' )"
-WM_CLASS="$( echo "$GAMECLASS" | awk 'BEGIN { FS = "=" } ; { print $2 }' )"
+_get_variable_field() {
+	echo "$GAMECLASS" | awk -v FIELD="$1" 'BEGIN { FS = "=" } ; { print $FIELD }'
+}
+
+EXE="$( _get_variable_field 1 )"
+WM_CLASS="$( _get_variable_field 2 )"
 
 if [[ -z "$EXE" ]] || [[ -z "$WM_CLASS" ]]; then
 	echo -e "Incorrect environment variable formatting.\n\nUsage: env GAMECLASS='\033[1m<executable>=<window class>\033[0m' gameclass [COMMAND]..."
@@ -30,17 +35,21 @@ if [[ -z "$COMMAND" ]]; then
 fi
 COMMAND=$(printf %s "$COMMAND")
 
-function get_exe_window {
+_get_exe_window() {
 	local windowlist ; windowlist=$( wmctrl -l -p )
 	local windowcount ; windowcount=$( echo "$windowlist" | wc -l )
 
 	for (( n = 1 ; n <= windowcount ; n++ )); do
 		local window ; window=$( echo "$windowlist" | sed -n "$n"p )
 
-		local wid ; wid=$( echo "$window" | awk '{ print $1 }' )
-		local pid ; pid=$( echo "$window" | awk '{ print $3 }' )
+		_get_window_property() {
+			echo "$window" | awk -v prop="$1" '{ print $prop }'
+		}
 
-		local cmd ; cmd=$( cat /proc/"$pid"/cmdline | tr -d '\0' )
+		local wid ; wid=$( _get_window_property 1 )
+		local pid ; pid=$( _get_window_property 3 )
+
+		local cmd ; cmd=$( cat /proc/"$pid"/cmdline | tr -d '\0' ) # Trim null bytes from cmdline to avoid log spam
 		unset -v WID
 		if [[ "$cmd" =~ $EXE ]]; then
 			WID="$wid"
@@ -48,7 +57,7 @@ function get_exe_window {
 	done
 }
 
-function set_class {
+_set_class() {
 	if [[ -z $WID ]]; then
 		:
 	else
@@ -61,16 +70,16 @@ function set_class {
 	fi
 }
 
-function window_watcher {
+_window_watcher() {
 	while sleep 1; do
-		get_exe_window
-		set_class
+		_get_exe_window
+		_set_class
 	done
 }
 
 set -m
 
-window_watcher &
+_window_watcher &
 GAMECLASS_PID="$!"
 
 # Let it rip.

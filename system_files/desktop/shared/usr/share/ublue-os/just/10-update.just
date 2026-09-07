@@ -6,34 +6,7 @@ alias upgrade := update
 [group("system")]
 update:
     #!/usr/bin/bash
-
-    # Source brew if we are not in an interactive session
-    [[ $- != *i* ]] && source <(/home/linuxbrew/.linuxbrew/bin/brew shellenv)
-
-    /usr/bin/topgrade --config /usr/share/ublue-os/topgrade.toml --keep
-
-# Turn automatic updates on or off
-_toggle-updates ACTION="prompt":
-    #!/usr/bin/bash
-    source /usr/lib/ujust/ujust.sh
-    CURRENT_STATE="$(systemctl is-enabled uupd.timer)"
-    OPTION={{ ACTION }}
-    if [ "$OPTION" == "prompt" ]; then
-      echo "Automatic updates are currently: ${bold}${CURRENT_STATE^}${normal}"
-      echo "Enable or Disable automatic updates?"
-      OPTION=$(ugum choose Enable Disable)
-    elif [ "$OPTION" == "help" ]; then
-      echo "Usage: ujust toggle-updates <option>"
-      echo "  <option>: Specify the quick option - 'enable' or 'disable'"
-      echo "  Use 'enable' to Enable automatic updates."
-      echo "  Use 'disable' to Disable automatic updates."
-      exit 0
-    fi
-    if [ "${OPTION,,}" == "enable" ]; then
-      sudo systemctl enable uupd.timer
-    elif [ "${OPTION,,}" == "disable" ]; then
-      sudo systemctl disable uupd.timer
-    fi
+    /usr/libexec/uupd-update | jq -r -R 'fromjson? | [(.title, .msg, .description) | select(.)] | join(" ")'
 
 alias changelog := changelogs
 

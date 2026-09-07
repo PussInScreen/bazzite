@@ -1,20 +1,5 @@
 # vim: set ft=make :
 
-# Enable BTRFS deduplication
-enable-deduplication:
-    systemctl enable btrfs-dedup@var-home.timer
-    systemctl enable btrfs-dedup@run-media-mmcblk0p1.timer
-
-# Install Handheld Controller Glyphs theme for hhd & CSS Loader (https://github.com/victor-borges/handheld-controller-glyphs)
-install-hhd-controller-glyph-theme:
-    #!/usr/bin/bash
-    if [ -d "$HOME/homebrew/themes" ]; then
-        rm -rf "$HOME/homebrew/themes/handheld-controller-glyphs"
-        git clone https://github.com/victor-borges/handheld-controller-glyphs.git --single-branch "$HOME/homebrew/themes/handheld-controller-glyphs"
-    else
-        echo 'Please install Decky Loader & CSS Loader first'
-    fi
-
 # Use EXT4 for SD Cards, allows use of SteamOS formatted SD cards
 switch-to-ext4:
     sudo sed -i 's@STEAMOS_BTRFS_SDCARD_FORMAT_FS="btrfs"@STEAMOS_BTRFS_SDCARD_FORMAT_FS="ext4"@g' /etc/default/steamos-btrfs
@@ -72,63 +57,45 @@ disable-sdgyrodsu:
 
 # runs ryzenadj --max-performance on AC power change
 enable-ryzenadj-max-performance:
-    #/bin/bash
-    # credit to adolforegosa on discord for the original fix
+    #!/bin/bash
+    # credit to adolforegosa on discord for the original fix and Katman for the script corrections
     echo 'this fix sets ryzenadj --max-performance whenever AC status changes to battery from plugged-in'
-    echo 'ACTION=="add|change", SUBSYSTEM=="power_supply", ATTR{online}=="0", RUN+="/bin/sh -c '/usr/bin/ryzenadj --max-performance'"' | sudo tee "/etc/udev/rules.d/99-ryzenadj-power-source-change.rules" > /dev/null
+    echo 'ACTION=="change", SUBSYSTEM=="power_supply", ATTR{online}=="0", RUN+="/usr/bin/ryzenadj --max-performance"' | sudo tee "/etc/udev/rules.d/99-ryzenadj-power-source-change.rules" > /dev/null
 
     sudo udevadm control --reload-rules
-    echo 'installation complete. Reboot to take effect'
 
-# toggles password prompt feedback in terminal, where sudo password prompts will display asterisks when enabled
-toggle-password-feedback ACTION="":
-    #!/usr/bin/bash
-    PWFEEDBACK_FILE="/etc/sudoers.d/enable-pwfeedback"
-    OPTION={{ ACTION }}
+    sudo tee /etc/systemd/system/max-perf-boot.service > /dev/null << 'EOF'
+    [Unit]
+    Description=Apply RyzenAdj max performance at boot
 
-    if [ "$OPTION" = "on" ]; then
-      echo 'Defaults pwfeedback' | sudo tee $PWFEEDBACK_FILE
-      echo "enabled, restart terminal to see changes"
-    elif [ "$OPTION" = "off" ]; then
-      sudo rm -f $PWFEEDBACK_FILE
-      echo "disabled pwfeedback. restart your terminal to see changes"
-    elif sudo test -f $PWFEEDBACK_FILE; then
-      sudo rm -f $PWFEEDBACK_FILE
-      echo "disabled pwfeedback. restart your terminal to see changes"
-    else
-      echo 'Defaults pwfeedback' | sudo tee $PWFEEDBACK_FILE
-      echo "enabled, restart terminal to see changes"
-    fi
+    [Service]
+    Type=oneshot
+    ExecStart=/usr/bin/ryzenadj --max-performance
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable max-perf-boot.service
+    echo 'Installation complete. Reboot to take effect'
 
 # disables ryzenadj --max-performance on AC power
 disable-ryzenadj-max-performance:
-    #/bin/bash
+    #!/bin/bash
     sudo rm /etc/udev/rules.d/99-ryzenadj-power-source-change.rules
     sudo udevadm control --reload-rules
-    echo 'removal complete'
+    sudo systemctl stop max-perf-boot.service
+    sudo systemctl disable --now max-perf-boot.service
+    sudo rm /etc/systemd/system/max-perf-boot.service
+    sudo systemctl daemon-reload
+    echo 'removal complete, reboot to take effect.'
 
 # Re-enable input remapper feature on non-desktop images
 restore-input-remapper:
     systemctl enable --now input-remapper.service && \
     cp /usr/share/applications/input-remapper-gtk.desktop ~/.local/share/applications/input-remapper-gtk.desktop && \
     sed -i '/NoDisplay=true/d' ~/.local/share/applications/input-remapper-gtk.desktop
-
-# Install firmware files needed for ayaneo and orangepi speakers
-install-speaker-firmware ACTION="":
-    #!/bin/bash
-    source /usr/lib/ujust/ujust.sh
-    OPTION={{ ACTION }}
-    FIRMWARE_SCRIPT="https://raw.githubusercontent.com/hhd-dev/hwinfo/refs/heads/master/firmware/bazzite-speaker.sh"
-    curl -o "/tmp/bazzite-speaker.sh" "$FIRMWARE_SCRIPT" && cat /tmp/bazzite-speaker.sh | pygmentize -l bash -O style=emacs
-    echo ""
-    echo "Run the above script using elevated permissions?"
-    if [ "$OPTION" == "" ]; then
-      OPTION=$(Choose "Yes" "No")
-    fi
-    if [[ "${OPTION,,}" =~ ^yes || "${OPTION,,}" =~ ^-y ]]; then
-      sudo bash /tmp/bazzite-speaker.sh
-    fi
-    rm /tmp/bazzite-speaker.sh
 
 # Configure video overrides for Steam
 configure-override-videos ACTION="":
@@ -178,26 +145,9 @@ restore-virtual-keyboard:
     if [[ ${BASE_IMAGE_NAME} == 'silverblue' ]]; then
       gnome-extensions disable block-caribou-36@lxylxy123456.ercli.dev
     else
-      if [[ ! -f ~/.local/share/applications/com.github.maliit.keyboard.desktop ]]; then
-        mkdir -p ~/.local/share/applications/
-        cp /usr/share/ublue-os/backup/com.github.maliit.keyboard.desktop ~/.local/share/applications/com.github.maliit.keyboard.desktop
-      fi
-    fi
-
-# Install hhd main branch locally until reboot, helpful for hhd testing and debugging. (rename to install-hhd-dev if we unhide)
-_hhd-dev:
-    #!/usr/bin/bash
-    source /usr/lib/ujust/ujust.sh
-    echo "Installing ${b}Handheld Daemon${n} locally until next reboot."
-    curl -L https://raw.githubusercontent.com/hhd-dev/hhd/master/local_hhd.sh | bash
-
-_toggle-autologin:
-    #!/usr/bin/bash
-    DESKTOP_AUTOLOGIN="/etc/bazzite/desktop_autologin"
-    if [[ -f $DESKTOP_AUTOLOGIN ]]; then
-      sudo rm -f $DESKTOP_AUTOLOGIN
-    else
-      sudo touch $DESKTOP_AUTOLOGIN
+      kwriteconfig6 --file kwinrc --group Wayland --key InputMethod /usr/share/applications/org.kde.plasma.keyboard.desktop
+      kwriteconfig6 --file kwinrc --group Wayland --key VirtualKeyboardEnabled --type bool true
+      echo "The Plasma virtual keyboard will be enabled after logging out and back in."
     fi
 
 # Restore the "Return to Gaming Mode" shortcut on the Desktop
@@ -226,3 +176,48 @@ restore-gamemode-shortcut:
     chmod +x "$SHORTCUT_FILE"
     echo "Shortcut restored successfully at $SHORTCUT_FILE."
     echo "Note: The first time you use the shortcut, it may ask you to trust it. Please accept."
+
+# Generate ignore configs for unknown external controllers not yet in our system-provided ignore list
+generate-inputplumber-ignorelist:
+    sudo /usr/libexec/bazzite-inputplumber-ignorelist
+
+# Enable/Disable opengamepadui overlay in gamemode
+configure-opengamepadui ACTION="":
+    #!/usr/bin/bash
+    source /usr/lib/ujust/ujust.sh
+    OPTION={{ ACTION }}
+    OGUI_STEAM="$HOME/.config/gamescope-session-plus/sessions.d/ogui-steam"
+    if [ -f $OGUI_STEAM ]; then
+        OGUI_STATE="${b}Disabled${n}"
+    else
+        OGUI_STATE="${b}Enabled${n}"
+    fi
+    if [ "$OPTION" == "help" ]; then
+      echo "Usage: ujust configure-opengamepadui <option>"
+      echo "  <option>: Specify the quick option to skip the prompt"
+      echo "  Use 'enable' to enable OpenGamepadUI overlay"
+      echo "  Use 'disable' to disable OpenGamepadUI overlay"
+      exit 0
+    elif [ "$OPTION" == "" ]; then
+      echo "${bold}Configure OpenGamepadUI overlay${normal}"
+      echo "OpenGamepadUI Overlay is: $OGUI_STATE"
+      OPTION=$(Choose "Enable" "Disable")
+    fi
+    if [[ "${OPTION,,}" =~ ^enable ]]; then
+      echo "Enabling OpenGamepadUI Overlay"
+      rm -f $OGUI_STEAM
+      systemctl --user disable --now bazzite-native-steam-input.service 2>/dev/null || true
+    elif [[ "${OPTION,,}" =~ ^disable ]]; then
+      echo "Disabling OpenGamepadUI Overlay"
+      # Create directory if it doesn't exist.
+      mkdir -p "${HOME}/.config/gamescope-session-plus/sessions.d"
+      # Create `ogui-steam` user override script for `gamescope-session-plus`
+      OGUI_STEAM=$OGUI_STEAM bash -c 'cat << EOF > "$OGUI_STEAM"
+    #!/usr/bin/bash
+
+    STEAM_SESSION_FILE=/usr/share/gamescope-session-plus/sessions.d/steam
+    [[ -f "\${STEAM_SESSION_FILE}" ]] && . "\${STEAM_SESSION_FILE}"
+    EOF'
+      chmod +x $OGUI_STEAM
+      systemctl --user enable --now bazzite-native-steam-input.service
+    fi

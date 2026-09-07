@@ -1,35 +1,55 @@
 # vim: set ft=make :
 
-# Add virtual audio channels/sinks named Game, Voice, Browser and Music which you can split audio to using qpwgraph, helvum, carla or other pipewire patchbays for use in OBS and other use cases
+# Add virtual audio channels/sinks named Game, Voice, Browser and Music which you can split audio to using qpwgraph, Helvum, Carla or other PipeWire patchbays for use in OBS and other use cases
 [group("audio")]
 setup-virtual-channels ACTION="":
     #!/usr/bin/bash
     source /usr/lib/ujust/ujust.sh
-    IMAGE_INFO="/usr/share/ublue-os/image-info.json"
-    IMAGE_NAME=$(jq -r '."image-name"' < $IMAGE_INFO)
-    # Set default props, for deck images make sure default output is valves virtual-sink
-    PROPS='node.name      = "playback.game_output"
+    CONFIG_FILE="$HOME/.config/pipewire/pipewire.conf.d/virtual-channels.conf"
+    get_status_token() {
+      if [[ -f "$CONFIG_FILE" ]]; then
+        echo "create"
+      else
+        echo "remove"
+      fi
+    }
+    get_current_status() {
+      if [[ "$(get_status_token)" == "create" ]]; then
+        echo "Enabled"
+      else
+        echo "Disabled"
+      fi
+    }
+    OPTION="{{ ACTION }}"
+    if [ "$OPTION" == "help" ]; then
+      echo "Usage: ujust setup-virtual-channels <option>"
+      echo "  <option>: Specify the quick option to skip the prompt"
+      echo "  Use 'status' to print the current portal token"
+      echo "  Use 'create' to select Create Virtual Audio Channels"
+      echo "  Use 'remove' to select Remove Virtual Audio Channels"
+      exit 0
+    elif [ "$OPTION" == "status" ]; then
+      get_status_token
+      exit 0
+    elif [ "$OPTION" == "" ]; then
+      echo "${bold}Virtual Audio Channels configuration${normal}"
+      echo "Current status: $(get_current_status)"
+      OPTION=$(ugum choose "Create Virtual Audio Channels" "Remove Virtual Audio Channels" "Exit without changes")
+    fi
+    if [[ "${OPTION,,}" =~ ^create ]]; then
+      IMAGE_INFO="/usr/share/ublue-os/image-info.json"
+      IMAGE_NAME=$(jq -r '."image-name"' < $IMAGE_INFO)
+      # Set default props, for deck images make sure default output is valves virtual-sink
+      PROPS='node.name      = "playback.game_output"
                     audio.position = [ FL FR ]
                     node.passive   = true'
-    if [[ "$IMAGE_NAME" =~ deck ]]; then
+      if [[ "$IMAGE_NAME" =~ deck ]]; then
         PROPS='node.name      = "playback.game_output"
                     audio.position = [ FL FR ]
                     node.passive   = true
                     target.object = "input.virtual-sink"'
-    fi
-    mkdir -p ~/.config/pipewire/pipewire.conf.d
-    OPTION={{ ACTION }}
-    if [ "$OPTION" == "help" ]; then
-      echo "Usage: ujust setup-virtual-channels <option>"
-      echo "  <option>: Specify the quick option to skip the prompt"
-      echo "  Use 'create' to select Create Virtual Audio Channels"
-      echo "  Use 'remove' to select Remove Virtual Audio Channels"
-      exit 0
-    elif [ "$OPTION" == "" ]; then
-      echo "${bold}Virtual Audio Channels configuration${normal}"
-      OPTION=$(Choose "Create Virtual Audio Channels" "Remove Virtual Audio Channels")
-    fi
-    if [[ "${OPTION,,}" =~ ^create ]]; then
+      fi
+      mkdir -p ~/.config/pipewire/pipewire.conf.d
       PLAYBACK_PROPS=$PROPS bash -c 'cat << EOL > ~/.config/pipewire/pipewire.conf.d/virtual-channels.conf
     context.modules = [
         { name = libpipewire-module-loopback
@@ -91,7 +111,7 @@ setup-virtual-channels ACTION="":
       echo "You can also add these channels to OBS audio mixer for separate audio control for yourself and your viewers."
       echo "NOTE: It is recommended to mute the virtual channels so you do not have to listen to them twice if you are not exclusively routing the audio through said channel instead of splitting audio to them."
     elif [[ "${OPTION,,}" =~ ^remove ]]; then
-      rm ~/.config/pipewire/pipewire.conf.d/virtual-channels.conf
+      rm -f "$CONFIG_FILE"
       echo "Virtual audio channels config removed, the channels will be removed next time you login."
     fi
 
@@ -100,24 +120,48 @@ setup-virtual-channels ACTION="":
 setup-virtual-surround ACTION="":
     #!/usr/bin/bash
     source /usr/lib/ujust/ujust.sh
-    mkdir -p ~/.config/pipewire/pipewire.conf.d
-    mkdir -p ~/.config/pipewire/hrtf-sofa
-    OPTION={{ ACTION }}
+    CONFIG_FILE="$HOME/.config/pipewire/pipewire.conf.d/spatializer-7.1.conf"
+    LEGACY_CONFIG_FILE="$HOME/.config/pipewire/pipewire.conf.d/virtual-surround-71.conf"
+    HRTF_FILE="$HOME/.config/pipewire/hrtf-sofa/sadie_d1.sofa"
+    get_status_token() {
+      if [[ -f "$CONFIG_FILE" && -f "$HRTF_FILE" ]]; then
+        echo "enable"
+      else
+        echo "disable"
+      fi
+    }
+    get_current_status() {
+      if [[ "$(get_status_token)" == "enable" ]]; then
+        echo "Enabled"
+      elif [[ -f "$CONFIG_FILE" || -f "$HRTF_FILE" ]]; then
+        echo "Partially Enabled"
+      else
+        echo "Disabled"
+      fi
+    }
+    OPTION="{{ ACTION }}"
     if [ "$OPTION" == "help" ]; then
       echo "Usage: ujust setup-virtual-surround <option>"
       echo "  <option>: Specify the quick option to skip the prompt"
-      echo "  Use 'enable' to select Enable Virtual Surround"
-      echo "  Use 'disable' to select Disable Virtual Surround"
+      echo "  Use 'status' to print the current portal token"
+      echo "  Use 'enable' to select Enable Virtual Headphone Surround"
+      echo "  Use 'disable' to select Disable Virtual Headphone Surround"
+      exit 0
+    elif [ "$OPTION" == "status" ]; then
+      get_status_token
       exit 0
     elif [ "$OPTION" == "" ]; then
-      echo "${bold}Virtual Surround configuration${normal}"
-      OPTION=$(Choose "Enable Virtual Surround" "Disable Virtual Surround")
+      echo "${bold}Virtual Headphone Surround configuration${normal}"
+      echo "Current status: $(get_current_status)"
+      OPTION=$(ugum choose "Enable Virtual Headphone Surround" "Disable Virtual Headphone Surround" "Exit without changes")
     fi
     if [[ "${OPTION,,}" =~ ^enable ]]; then
-      echo "Downloading a sample HRTF .sofa from the Sofacoustics database..."
-      wget -O ~/.config/pipewire/hrtf-sofa/mit_kemar_normal_pinna.sofa https://sofacoustics.org/data/database_sofa_0.6/mit/mit_kemar_normal_pinna.sofa
-      if [ -f ~/.config/pipewire/pipewire.conf.d/virtual-surround-71.conf ]; then
-        mv ~/.config/pipewire/pipewire.conf.d/virtual-surround-71.conf ~/.config/pipewire/virtual-surround-71.conf.bak
+      mkdir -p ~/.config/pipewire/pipewire.conf.d
+      mkdir -p ~/.config/pipewire/hrtf-sofa
+      echo "Downloading Valve's Steam Audio HRTF..."
+      wget -O "$HRTF_FILE" https://github.com/ValveSoftware/steam-audio/raw/480dd64f513cc8a6437e7d5b9eb0d3f1d30c2fac/core/data/hrtf/sadie_d1.sofa
+      if [ -f "$LEGACY_CONFIG_FILE" ]; then
+        mv "$LEGACY_CONFIG_FILE" ~/.config/pipewire/virtual-surround-71.conf.bak
       fi
       bash -c 'cat << SPATIALIZER > ~/.config/pipewire/pipewire.conf.d/spatializer-7.1.conf
     # Headphone surround sink
@@ -129,8 +173,8 @@ setup-virtual-surround ACTION="":
         { name = libpipewire-module-filter-chain
             flags = [ nofail ]
             args = {
-                node.description = "Spatial Sink"
-                media.name       = "Spatial Sink"
+                node.description = "Virtual Headphone Surround"
+                media.name       = "Virtual Headphone Surround"
                 filter.graph = {
                     nodes = [
                         {
@@ -138,7 +182,7 @@ setup-virtual-surround ACTION="":
                             label = spatializer
                             name = spFL
                             config = {
-                                filename = "$HOME/.config/pipewire/hrtf-sofa/mit_kemar_normal_pinna.sofa"
+                                filename = "$HOME/.config/pipewire/hrtf-sofa/sadie_d1.sofa"
                             }
                             control = {
                                 "Azimuth"    = 30.0
@@ -151,7 +195,7 @@ setup-virtual-surround ACTION="":
                             label = spatializer
                             name = spFR
                             config = {
-                                filename = "$HOME/.config/pipewire/hrtf-sofa/mit_kemar_normal_pinna.sofa"
+                                filename = "$HOME/.config/pipewire/hrtf-sofa/sadie_d1.sofa"
                             }
                             control = {
                                 "Azimuth"    = 330.0
@@ -164,7 +208,7 @@ setup-virtual-surround ACTION="":
                             label = spatializer
                             name = spFC
                             config = {
-                                filename = "$HOME/.config/pipewire/hrtf-sofa/mit_kemar_normal_pinna.sofa"
+                                filename = "$HOME/.config/pipewire/hrtf-sofa/sadie_d1.sofa"
                             }
                             control = {
                                 "Azimuth"    = 0.0
@@ -177,7 +221,7 @@ setup-virtual-surround ACTION="":
                             label = spatializer
                             name = spRL
                             config = {
-                                filename = "$HOME/.config/pipewire/hrtf-sofa/mit_kemar_normal_pinna.sofa"
+                                filename = "$HOME/.config/pipewire/hrtf-sofa/sadie_d1.sofa"
                             }
                             control = {
                                 "Azimuth"    = 150.0
@@ -190,7 +234,7 @@ setup-virtual-surround ACTION="":
                             label = spatializer
                             name = spRR
                             config = {
-                                filename = "$HOME/.config/pipewire/hrtf-sofa/mit_kemar_normal_pinna.sofa"
+                                filename = "$HOME/.config/pipewire/hrtf-sofa/sadie_d1.sofa"
                             }
                             control = {
                                 "Azimuth"    = 210.0
@@ -203,7 +247,7 @@ setup-virtual-surround ACTION="":
                             label = spatializer
                             name = spSL
                             config = {
-                                filename = "$HOME/.config/pipewire/hrtf-sofa/mit_kemar_normal_pinna.sofa"
+                                filename = "$HOME/.config/pipewire/hrtf-sofa/sadie_d1.sofa"
                             }
                             control = {
                                 "Azimuth"    = 90.0
@@ -216,7 +260,7 @@ setup-virtual-surround ACTION="":
                             label = spatializer
                             name = spSR
                             config = {
-                                filename = "$HOME/.config/pipewire/hrtf-sofa/mit_kemar_normal_pinna.sofa"
+                                filename = "$HOME/.config/pipewire/hrtf-sofa/sadie_d1.sofa"
                             }
                             control = {
                                 "Azimuth"    = 270.0
@@ -229,7 +273,7 @@ setup-virtual-surround ACTION="":
                             label = spatializer
                             name = spLFE
                             config = {
-                                filename = "$HOME/.config/pipewire/hrtf-sofa/mit_kemar_normal_pinna.sofa"
+                                filename = "$HOME/.config/pipewire/hrtf-sofa/sadie_d1.sofa"
                             }
                             control = {
                                 "Azimuth"    = 0.0
@@ -274,29 +318,25 @@ setup-virtual-surround ACTION="":
                     node.passive   = true
                     audio.channels = 2
                     audio.position = [ FL FR ]
+                    channelmix.max-volume = 0.255
                 }
             }
         }
     ]
     SPATIALIZER'
       echo ""
-      echo "Virtual surround has now been set up with a placeholder HRTF file; either restart PipeWire - ${bold}TIP:${normal} ujust restart-pipewire - or reboot for changes to take effect. Select 'Spatial Sink' as the default audio device to enable surround sound virtualization. "${bold}This setup is incompatible with EasyEffects or JamesDSP;${normal} make sure neither of those is running."
-      echo ""
-      echo "${bold}IMPORTANT:${normal}"
-      echo "${bold}1.${normal} Watch https://youtu.be/VCXQp7swp5k for a demonstration of various HRTFs to find one that best matches your anatomy."
-      echo "${bold}2.${normal} Once you find an HRTF that seems to suit you, you may download it from https://sofacoustics.org/data/database_sofa_0.6/ - likely from inside the ${bold}listen/${normal} directory;"
-      echo "${bold}3.${normal} Then, open ~/.config/pipewire/pipewire.conf.d/spatializer-7.1.conf with a text editor, and replace the paths to the sample file with the path to yours."
+      echo "Virtual surround sound has been successfully set up. Reboot your system or restart PipeWire for changes to take effect. ${bold}TIP:${normal} Use Bazzite Portal > Troubleshooting > Restart PipeWire or run 'ujust restart-pipewire' in the Terminal. Select 'Virtual Headphone Surround' as the default audio device to enable surround virtualization. ${bold}This setup is incompatible with EasyEffects or JamesDSP;${normal} make sure neither is currently running."
     elif [[ "${OPTION,,}" =~ ^disable ]]; then
-      if [ -f ~/.config/pipewire/pipewire.conf.d/virtual-surround-71.conf ]; then
-        rm ~/.config/pipewire/pipewire.conf.d/virtual-surround-71.conf
+      if [ -f "$LEGACY_CONFIG_FILE" ]; then
+        rm "$LEGACY_CONFIG_FILE"
       fi
-      rm ~/.config/pipewire/pipewire.conf.d/spatializer-7.1.conf
-      rm ~/.config/pipewire/hrtf-sofa/mit_kemar_normal_pinna.sofa
-      echo "Surround configuration file and sample .sofa removed, please reboot or restart PipeWire for changes to take effect."
+      rm -f "$CONFIG_FILE"
+      rm -f "$HRTF_FILE"
+      echo "Virtual surround configuration file and HRTF removed, please reboot or restart PipeWire for changes to take effect. ${bold}TIP:${normal} Use Bazzite Portal > Troubleshooting > Restart PipeWire or run 'ujust restart-pipewire'."
     fi
 
-# Restart pipewire
+# Restart PipeWire
 [group("audio")]
 restart-pipewire:
-    echo "Restarting pipewire..."
+    echo "Restarting PipeWire..."
     systemctl --user restart pipewire.service

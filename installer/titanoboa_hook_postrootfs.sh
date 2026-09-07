@@ -4,11 +4,13 @@ set -exo pipefail
 
 source /etc/os-release
 
-# Install Anaconda webui
-dnf install -qy anaconda-live libblockdev-{btrfs,lvm,dm}
+# Remove all versionlocks, in order to avoid dependency issues
+dnf -qy versionlock clear
+
+# Install Anaconda
+dnf install -qy --enable-repo=fedora-cisco-openh264 --allowerasing firefox anaconda-live libblockdev-{btrfs,lvm,dm}
+
 mkdir -p /var/lib/rpm-state # Needed for Anaconda Web UI
-# TODO: Enable Anaconda Web UI whenever locale switching in kde lands
-# dnf install -qy anaconda-webui
 
 # Utilities for displaying a dialog prompting users to review secure boot documentation
 dnf install -qy --setopt=install_weak_deps=0 qrencode yad
@@ -25,57 +27,8 @@ SECUREBOOT_DOC_URL_QR="/usr/share/ublue-os/secure_boot_qr.png"
 
 # Bazzite anaconda profile
 : ${VARIANT_ID:?}
-cat >/etc/anaconda/profile.d/bazzite.conf <<EOF
-# Anaconda configuration file for bazzite
-
-[Profile]
-# Define the profile.
-profile_id = bazzite
-
-[Profile Detection]
-# Match os-release values
-os_id = bazzite
-
-[Network]
-default_on_boot = FIRST_WIRED_WITH_LINK
-
-[Bootloader]
-efi_dir = fedora
-menu_auto_hide = True
-
-[Storage]
-default_scheme = BTRFS
-btrfs_compression = zstd:1
-default_partitioning =
-    /     (min 1 GiB, max 70 GiB)
-    /home (min 500 MiB, free 50 GiB)
-    /var  (btrfs)
-
-[User Interface]
-custom_stylesheet = /usr/share/anaconda/pixmaps/fedora.css
-hidden_spokes =
-    NetworkSpoke
-    PasswordSpoke
-
-hidden_webui_pages =
-    root-password
-    network
-
-[Localization]
-use_geolocation = False
-EOF
 
 echo "Bazzite release $VERSION_ID ($VERSION_CODENAME)" >/etc/system-release
-
-# Get Artwork
-git clone --depth 1 --quiet https://github.com/ublue-os/bazzite.git /root/packages
-case "${PRETTY_NAME,,}" in
-"bazzite"*)
-    mkdir -p /usr/share/anaconda/pixmaps/silverblue
-    cp -r /root/packages/installer/branding/* /usr/share/anaconda/pixmaps/
-    ;;
-esac
-rm -rf /root/packages
 
 # Secureboot Key Fetch
 mkdir -p /usr/share/ublue-os
@@ -93,11 +46,35 @@ mkdir -p /tmp/anacoda_custom_logs
 %pre --erroronfail --log=/tmp/anacoda_custom_logs/detect_bitlocker.log
 DOCS_QR=/tmp/detect_bitlocker_qr.png
 IS_BITLOCKER=\$(lsblk -o FSTYPE --json | jq '.blockdevices | map(select(.fstype == "BitLocker")) | . != []')
+{ WARNING_MSG="\$(</dev/stdin)"; } << 'WARNINGEOF'
+<span size="x-large">Windows Bitlocker partition detected</span>
+
+It might interrupt the installation process.
+In such case, please, do <b>one</b> of the following:
+    a) Disconnect its storage drive.
+    b) Disable Bitlocker in Windows.
+    c) Delete it in GNOME Disks.
+
+Do you wish to continue?
+WARNINGEOF
+
 if [[ \$IS_BITLOCKER =~ true ]]; then
     qrencode -o \$DOCS_QR "https://www.wikihow.com/Turn-Off-BitLocker"
-    run0 --user=liveuser yad --timeout=0 --image=\$DOCS_QR \
-        --text="<b>Windows Bitlocker partition detected</b>\nPlease, disable it in Windows or delete it in GNOME Disks\nor disconnect its storage drive." || :
-    exit 1
+    _EXITLOCK=1
+    _RETCODE=0
+    while [[ \$_EXITLOCK -ne 0 ]]; do
+        run0 --user=liveuser yad \
+            --on-top \
+            --timeout=10 \
+            --image=\$DOCS_QR \
+            --text="\$WARNING_MSG" \
+            --button="Yes, I'm aware, continue":0 --button="Cancel installation":10
+        _RETCODE=\$?
+        case \$_RETCODE in
+            0) _EXITLOCK=0; ;;
+            10) _EXITLOCK=0; pkill liveinst; pkill firefox; exit 0 ;;
+        esac
+    done
 fi
 %end
 
@@ -129,19 +106,11 @@ run0 --user=liveuser yad \
     < /tmp/anaconda.log
 %end
 
-$(
-    if [[ $imageref == *-deck* ]]; then
-        cat <<EOCAT
-# Set default user
-user --name=bazzite --password=bazzite --plaintext --groups=wheel
-EOCAT
-    fi
-)
-
 ostreecontainer --url=$imageref:$imagetag --transport=containers-storage --no-signature-verification
 %include /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
 %include /usr/share/anaconda/post-scripts/disable-fedora-flatpak.ks
 %include /usr/share/anaconda/post-scripts/install-flatpaks.ks
+%include /usr/share/anaconda/post-scripts/flatpak-restore-selinux-labels.ks
 %include /usr/share/anaconda/post-scripts/secureboot-enroll-key.ks
 %include /usr/share/anaconda/post-scripts/secureboot-docs.ks
 
@@ -196,29 +165,6 @@ EOF
 
 qrencode -o "$SECUREBOOT_DOC_URL_QR" "$SECUREBOOT_DOC_URL"
 
-# Install Flatpaks
-cat <<'EOF' >>/usr/share/anaconda/post-scripts/install-flatpaks.ks
-%post --erroronfail --nochroot --log=/tmp/anacoda_custom_logs/install-flatpaks.log
-deployment="$(ostree rev-parse --repo=/mnt/sysimage/ostree/repo ostree/0/1/0)"
-target="/mnt/sysimage/ostree/deploy/default/deploy/$deployment.0/var/lib/"
-mkdir -p "$target"
-rsync -aAXUHKP /var/lib/flatpak "$target"
-%end
-EOF
-
-# Disable Fedora Flatpak Repo
-cat <<EOF >>/usr/share/anaconda/post-scripts/disable-fedora-flatpak.ks
-%post --erroronfail --log=/tmp/anacoda_custom_logs/disable-fedora-flatpak.log
-systemctl disable flatpak-add-fedora-repos.service || :
-%end
-EOF
-
-# Set Anaconda Payload to use flathub
-cat <<EOF >>/etc/anaconda/conf.d/anaconda.conf
-[Payload]
-flatpak_remote = flathub https://dl.flathub.org/repo/
-EOF
-
 # TODO (@Zeglius): Hide grub by default and set timeout to 5 seconds
 # # Hide grub by default and set timeout to 5 seconds
 # mkdir -p /boot/grub2
@@ -239,6 +185,7 @@ EOF
         rpm-ostree-countme.service \
         tailscaled.service \
         bazzite-hardware-setup.service \
+        ublue-hardware-setup.service \
         bootloader-update.service \
         brew-upgrade.timer \
         brew-update.timer \
@@ -248,168 +195,53 @@ EOF
         ublue-guest-user.service \
         ublue-os-media-automount.service \
         ublue-system-setup.service \
+        bazzite-flatpak-manager.service \
+        ublue-flatpak-manager.service \
+        flatpak-add-fedora-repos.service \
+        greenboot-set-rollback-trigger.service \
+        greenboot-healthcheck.service \
+        input-remapper.service \
+        switcheroo-control.service \
         check-sb-key.service; do
-        systemctl disable $s
+        if systemctl list-unit-files "$s" >/dev/null 2>&1; then
+            systemctl disable "$s"
+        fi
     done
 
     for s in \
-        ublue-flatpak-manager.service \
         podman-auto-update.timer \
+        bazzite-user-setup.service \
         ublue-user-setup.service; do
-        systemctl --global disable $s
+        if systemctl --global list-unit-files "$s" >/dev/null 2>&1; then
+            systemctl --global disable "$s"
+        fi
     done
 )
 
-# Add bootloader restoring script
-cat >/usr/bin/bootloader_restore.sh <<'SCRIPTEOF'
-#!/usr/bin/env -S /usr/bin/pkexec --keep-cwd /usr/bin/bash
-
-set -o pipefail
-if [[ $DEBUG -eq 1 ]]; then
-    set -x
-fi
-exec > >(tee -a /tmp/bootloader_restore.log) 2>&1
-echo >&2 "### START LOG $(date -u) ###"
-
-######################################################
-
-yad() {
-    command run0 --user="$PKEXEC_UID" -- command yad \
-        --title="$_APP_NAME" \
-        --separator=$'\n' \
-        --timeout=0 \
-        "$@"
-}
-
-info() {
-    echo >&2 "INFO [${0##*/}:${BASH_LINENO[0]}]: $*"
-}
-
-error() {
-    echo >&2 "ERROR [${0##*/}:${BASH_LINENO[0]}]: $*"
-}
-
-die() {
-    error "$*"
-    exit 1
-}
-
-die_gui() {
-    yad --title="Error" --text="$(error "$*" 2>&1)" --button="OK:0"
-    die "$*"
-}
-
-######################################################
-
-if [[ $PKEXEC_UID -eq 0 ]]; then
-    die "You must not execute this script as root."
-fi
-
-_APP_NAME="Bazzite Bootloader Restoring Tool"
-DRY_RUN=${DRY_RUN:-0}
-MNT=/tmp/mnt
-trap 'umount --recursive $MNT/boot 2>/dev/null' EXIT
-
-DISK_PATH=$(lsblk -d -n -o NAME,SIZE,MODEL | while read -r name size model; do
-    echo "$name"
-    echo "$size"
-    echo "$model"
-done | yad --list --no-buttons \
-    --text="Double-click the disk where you installed Bazzite:" --width=500 --height=300 \
-    --column="Device" \
-    --column="Size" \
-    --column="Model" \
-    --print-column=1) || {
-    info "User cancelled during disk selection"
-    exit 0
-}
-: "${DISK_PATH:?}"
-DISK_PATH=/dev/${DISK_PATH}
-
-efi_dev=$(systemd-repart --json=short "$DISK_PATH" 2>/dev/null |
-    jq -r '.[] | select(.type == "esp").node')
-[[ -n ${efi_dev} ]] || { die_gui "EFI partition not found"; }
-xboot_dev=$(
-    lsblk -J -p -f -o NAME,LABEL,SIZE,FSTYPE "$DISK_PATH" 2>/dev/null |
-        jq -r '.blockdevices[0].children[] | select(.fstype == "ext4") | "\(.name)\n\(.label // "")\n\(.size)"' |
-        yad --list --no-buttons \
-            --text="Double-click the XBOOT partition:" --width=500 --height=300 \
-            --column="Device" \
-            --column="Label" \
-            --column="Size" \
-            --print-column=1
-) || {
-    info "User cancelled during XBOOT partition selection"
-    exit 0
-}
-[[ -n "${xboot_dev}" ]] || die_gui "You must select an XBOOT partition."
-
-yad --text="This will restore the boot in the device $DISK_PATH, using $xboot_dev as the XBOOT partition. Proceed?" || {
-    info "User cancelled during restoration confirmation"
-    exit 0
-}
-
-mount --mkdir "$xboot_dev" "$MNT"/boot || die "Failed to mount XBOOT partition"
-mount "$efi_dev" "$MNT"/boot/efi || die "Failed to mount EFI partition"
-
-if [[ $DRY_RUN -eq 1 ]]; then
-    info "Script was executed with ${DRY_RUN@A}, skipping bootloader restoration..."
-    yad --text="Script was executed with ${DRY_RUN@A}, skipping bootloader restoration...." --button="OK:0"
-else
-    if [[ -f $MNT/boot/bootupd-state.json ]]; then
-        rm -vf $MNT/boot/bootupd-state.json &&
-            info "Removed existing bootupd-state.json"
-    fi
-    run0 --user="$PKEXEC_UID" -- \
-        ptyxis --title="$_APP_NAME - Restoring bootloader" -- \
-        pkexec bash -c "bootupctl backend install \
-        -vvvv \
-        --auto \
-        --write-uuid \
-        --update-firmware \
-        --device \"$DISK_PATH\" \"$MNT\"" &&
-        info "Bootloader restored successfully." &&
-        yad --text "Bootloader restored successfully." --button="OK:0"
-fi
-
-SCRIPTEOF
-chmod +x /usr/bin/bootloader_restore.sh
-cat >/usr/share/applications/bazzite_bootloader_restoring_tool.desktop <<'EOF'
-[Desktop Entry]
-Type=Application
-Icon=tools-wizard-symbolic
-Name=Bazzite Bootloader Restoring Tool BETA
-Comment=Restore the bootloader of an installation if has been overriden by Windows
-Keywords=bootloader;fix;grub;windows
-Categories=System;Utility
-Exec=/usr/bin/bootloader_restore.sh
-Hidden=false
-NoDisplay=false
-StartupNotify=true
-Terminal=false
-EOF
-
 ### Desktop-enviroment specific tweaks ###
-
 # Setup script to show dialog popups at login
-echo '#!/usr/bin/bash' >/usr/bin/on_gui_login.sh
-chmod +x /usr/bin/on_gui_login.sh
-mkdir -p /etc/skel/.config/autostart
-cat >/etc/skel/.config/autostart/on_gui_login.desktop <<'EOF'
-[Desktop Entry]
-Exec=/usr/bin/on_gui_login.sh
-Icon=application-x-shellscript
-Type=Application
-EOF
 
-# Warn the user about non functional Nvidia drivers
+# Use GSK_RENDERER=gl for nvidia, workaround for GTK apps not opening.
 if [[ $imageref == *-nvidia* ]]; then
-    cat >>/usr/bin/on_gui_login.sh <<'EOF'
-{ yad --title="Warning" --text="$(</dev/stdin)" || true; } <<'WARNINGEOF'
-Nvidia drivers might not be functional on live isos.
-Please do not use them in benchmarks.
-WARNINGEOF
-EOF
+    mkdir -p /etc/environment.d /etc/skel/.config/environment.d
+    echo "GSK_RENDERER=gl" >>/etc/environment.d/99-nvidia-fix.conf
+    echo "GSK_RENDERER=gl" >>/etc/skel/.config/environment.d/99-nvidia-fix.conf
+fi
+
+# Reenable nouveau
+if [[ $imageref == *-nvidia* ]]; then
+    for pkg in nvidia-gpu-firmware mesa-vulkan-drivers; do
+        dnf -yq reinstall --allowerasing $pkg ||
+            dnf -yq install --allowerasing $pkg
+    done
+    # Ensure nouveau vulkan icds exist
+    (
+        shopt -u nullglob
+        ls /usr/share/vulkan/icd.d/nouveau_icd.*.json >/dev/null
+    ) || {
+        echo >&2 "::error::No nouveau vulkan icds found at /usr/share/vulkan/icd.d/nouveau_icd.*.json"
+        exit 1
+    }
 fi
 
 # Determine desktop environment. Must match one of /usr/libexec/livesys/sessions.d/livesys-{desktop_env}
@@ -426,31 +258,25 @@ sway*) desktop_env=sway ;;
 xfce*) desktop_env=xfce ;;
 esac
 
-# Dont start Steam at login
+# Install conky to display hardware information on the desktop
+# Excluded from GNOME for the time being
+if [[ $desktop_env == kde ]]; then
+    dnf install -qy --setopt=install_weak_deps=0 conky
+fi
+
+# Don't start Steam at login
 rm -vf /etc/skel/.config/autostart/steam*.desktop
 
-# Remove packages that shouldnt be used in a live session
-dnf -yq remove steam lutris || :
+# Remove packages that shouldn't be used in a live session
+dnf -yq remove steam lutris bazaar waydroid || :
 
-# Warn about limited capabilities of live sessions
-cat >>/usr/bin/on_gui_login.sh <<'EOF'
-yad --timeout=30 \
-    --no-escape \
-    --no-buttons \
-    --on-top \
-    --timeout-indicator=bottom \
-    --text-align=center \
-    --title="Welcome" \
-    --text="\nWelcome to the Live ISO for Bazzite\!\n\nThe Live ISO is designed for installation and troubleshooting.\nBecause of this, it is <b>not capable of playing games.</b>\n\nPlease do not use it for benchmarks as it\ndoes not represent the installed experience.\n" \
-    || :
-EOF
+# Don't check for verified image
+rm -vf /etc/profile.d/verify_motd.sh
 
 (
     wallpaper_url=https://github.com/ublue-os/bazzite/raw/refs/heads/main/press_kit/art/Convergence_Wallpaper_DX.jxl
     wallpaper_file=/usr/share/wallpapers/convergence.jxl
     wget -nv -O "$wallpaper_file" "$wallpaper_url"
-    cp 2>/dev/null "$wallpaper_file" /usr/share/backgrounds/convergence.jxl || :
-    cp 2>/dev/null "$wallpaper_file" /usr/share/backgrounds/convergence/convergence_morn.jxl || :
     rm -f /usr/share/backgrounds/default.xml
 )
 
@@ -467,54 +293,24 @@ if [[ $imageref == *-deck* ]]; then
     fi
 fi
 
-# Tweak the fedora-welcome app (gnome only) with our own text/icons
-if [[ $desktop_env == gnome ]]; then
-    sed -i 's| Fedora| Bazzite|' /usr/share/anaconda/gnome/fedora-welcome || :
-    cp -f /usr/share/pixmaps/{fedora-logo-sprite,fedora-logo-icon}.png || :
+# Change default pins for KDE
+if [[ $desktop_env == kde ]]; then
+    sed -i '/const allPanels/,$d' /usr/share/plasma/layout-templates/org.kde.plasma.desktop.defaultPanel/contents/layout.js
+    sed -i '$r /usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates/bazzite-pins.js' /usr/share/plasma/layout-templates/org.kde.plasma.desktop.defaultPanel/contents/layout.js
 fi
 
-# Let only browser/installer in the task-bar/dock
-if [[ $desktop_env == kde ]]; then
-    sed -i '/<entry name="launchers" type="StringList">/,/<\/entry>/ s/<default>[^<]*<\/default>/<default>preferred:\/\/browser,applications:liveinst.desktop,preferred:\/\/filemanager<\/default>/' \
-        /usr/share/plasma/plasmoids/org.kde.plasma.taskmanager/contents/config/main.xml
-elif [[ $desktop_env == gnome ]]; then
-    cat >/usr/share/glib-2.0/schemas/zz2-org.gnome.shell.gschema.override <<EOF
-[org.gnome.shell]
-welcome-dialog-last-shown-version='4294967295'
-favorite-apps = ['liveinst.desktop', 'org.mozilla.firefox.desktop', 'org.gnome.Nautilus.desktop']
-EOF
+# Don't start the fedora-welcome app (gnome only)
+if [[ $desktop_env == gnome ]]; then
+    sed -i 's@\[Desktop Entry\]@\[Desktop Entry\]\nHidden=true@g' /usr/share/anaconda/gnome/org.fedoraproject.welcome-screen.desktop || :
+fi
+
+rm -f /usr/share/applications/bbrew.desktop /usr/share/applications/bazzite-steam*.desktop
+rm -f /usr/bin/rpm-ostree # Should never under any circumstance be ran on the live ISO
+
+# Set new background for GNOME
+if [[ $desktop_env == gnome ]]; then
     glib-compile-schemas /usr/share/glib-2.0/schemas
 fi
-
-# Disable kde wallet
-if [[ $desktop_env == kde ]]; then
-    mkdir -p /etc/skel/.config
-    cat >/etc/skel/.config/kwalletrc <<'EOF'
-[Wallet]
-Enabled=false
-EOF
-fi
-
-# Add support for controllers
-_tmp=$(mktemp -d)
-(
-    set -eo pipefail
-    dnf -yq install python-evdev python-rich
-    git clone https://github.com/hhd-dev/jkbd "$_tmp"
-    cd "$_tmp"
-    python -m venv .venv
-    #shellcheck disable=1091
-    source .venv/bin/activate
-    pip install build installer setuptools wheel
-    python -m build --wheel --no-isolation
-    python -m installer --prefix=/usr --destdir=/ dist/*.whl
-    sed -i '1s|.*|#!/usr/bin/python|' /usr/bin/jkbd
-    mkdir -p /usr/lib/systemd/system/
-    install -m644 usr/lib/systemd/system/jkbd.service /usr/lib/systemd/system/jkbd.service
-    systemctl enable jkbd.service
-) || :
-rm -rf "$_tmp"
-unset -v _tmp
 
 # Install Gparted
 dnf -yq install gparted

@@ -6,16 +6,17 @@ on:
         description: 'Small changelog about changes in this build:'
       target:
         description: 'Release Branch (e.g., testing). Defaults to branch name.'
-permissions:
-  contents: write
+permissions: {}
 
 name: Generate Release
 jobs:
   generate-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout last 500 commits (for <commits> to work)
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 500
 
@@ -28,7 +29,10 @@ jobs:
             TARGET="stable"
           fi
           echo "target=$TARGET" >> $GITHUB_OUTPUT
-      
+
+      - name: Install ORAS
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+
       - name: Generate Release Text
         id: generate-release
         run: |
@@ -40,7 +44,7 @@ jobs:
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
 
       - name: Create Release
-        uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 # v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           name: ${{ steps.generate-release.outputs.title }}
           tag_name: ${{ steps.generate-release.outputs.tag }}

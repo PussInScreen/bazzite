@@ -5,31 +5,54 @@ set -eoux pipefail
 echo "::group::Executing install-kernel-akmods"
 trap 'echo "::endgroup::"' EXIT
 
-dnf5 -y remove --no-autoremove kernel kernel-core kernel-modules kernel-modules-core kernel-modules-extra kernel-tools kernel-tools-libs kernel-uki-virt
+# create a shims to bypass kernel install triggering dracut/rpm-ostree
+# seems to be minimal impact, but allows progress on build
+pushd /usr/lib/kernel/install.d
+mv 05-rpmostree.install 05-rpmostree.install.bak
+mv 50-dracut.install 50-dracut.install.bak
+printf '%s\n' '#!/bin/sh' 'exit 0' > 05-rpmostree.install
+printf '%s\n' '#!/bin/sh' 'exit 0' > 50-dracut.install
+chmod +x  05-rpmostree.install 50-dracut.install
+popd
+
+# Remove Existing Kernel
+for pkg in kernel kernel{-core,-modules,-modules-core,-modules-extra,-tools-libs,-tools}; do
+    rpm --erase "${pkg}" --nodeps
+done
+
+# cleanup leftovers that are not covered by kernel-* packages for some reason
+rm -rf /usr/lib/modules
 
 dnf5 -y install \
     /tmp/kernel-rpms/kernel-[0-9]*.rpm \
     /tmp/kernel-rpms/kernel-core-*.rpm \
     /tmp/kernel-rpms/kernel-modules-*.rpm \
-    /tmp/kernel-rpms/kernel-tools-[0-9]*.rpm \
-    /tmp/kernel-rpms/kernel-tools-libs-[0-9]*.rpm \
     /tmp/kernel-rpms/kernel-devel-*.rpm
 
-dnf5 versionlock add kernel kernel-devel kernel-devel-matched kernel-core kernel-modules kernel-modules-core kernel-modules-extra kernel-tools kernel-tools-libs
+dnf5 versionlock add kernel kernel-devel kernel-devel-matched kernel-core kernel-modules
 
-dnf5 -y install \
-    /tmp/akmods-rpms/kmods/*kvmfr*.rpm \
-    /tmp/akmods-rpms/kmods/*xone*.rpm \
-    /tmp/akmods-rpms/kmods/*openrazer*.rpm \
-    /tmp/akmods-rpms/kmods/*v4l2loopback*.rpm \
-    /tmp/akmods-rpms/kmods/*wl*.rpm \
-    /tmp/akmods-rpms/kmods/*framework-laptop*.rpm \
-    /tmp/akmods-extra-rpms/kmods/*nct6687*.rpm \
-    /tmp/akmods-extra-rpms/kmods/*gcadapter_oc*.rpm \
-    /tmp/akmods-extra-rpms/kmods/*zenergy*.rpm \
-    /tmp/akmods-extra-rpms/kmods/*vhba*.rpm \
-    /tmp/akmods-extra-rpms/kmods/*gpd-fan*.rpm \
-    /tmp/akmods-extra-rpms/kmods/*ayaneo-platform*.rpm \
-    /tmp/akmods-extra-rpms/kmods/*ayn-platform*.rpm \
-    /tmp/akmods-extra-rpms/kmods/*bmi260*.rpm \
-    /tmp/akmods-extra-rpms/kmods/*ryzen-smu*.rpm
+/ctx/install-kmods \
+    /tmp/rpms/{common,kmods}/*kvmfr*.rpm \
+    /tmp/rpms/{common,kmods}/*openrazer*.rpm \
+    /tmp/rpms/{common,kmods}/*v4l2loopback*.rpm \
+    /tmp/rpms/{common,kmods}/*xone*.rpm
+
+/ctx/install-kmods \
+    /tmp/rpms/{extra,kmods-extra}/*zenergy*.rpm \
+    /tmp/rpms/{extra,kmods-extra}/*gcadapter*.rpm \
+    /tmp/rpms/{extra,kmods-extra}/*evdi*.rpm \
+    /tmp/rpms/{extra,kmods-extra}/*kvmfr*.rpm \
+    /tmp/rpms/{extra,kmods-extra}/*new-lg4ff*.rpm \
+    /tmp/rpms/{extra,kmods-extra}/*hid-tmff2*.rpm \
+    /tmp/rpms/{extra,kmods-extra}/*t150-driver*.rpm \
+    /tmp/rpms/{extra,kmods-extra}/*hid-fanatecff*.rpm \
+    /tmp/rpms/{extra,kmods-extra}/*ryzen_smu*.rpm \
+    /tmp/rpms/{extra,kmods-extra}/*sc0710*.rpm \
+    /tmp/rpms/{extra,kmods-extra}/*nct6687d*.rpm \
+    /tmp/rpms/{extra,kmods-extra}/*system76*.rpm \
+    /tmp/rpms/{extra,kmods-extra}/*vhba*.rpm
+
+pushd /usr/lib/kernel/install.d
+mv -f 05-rpmostree.install.bak 05-rpmostree.install
+mv -f 50-dracut.install.bak 50-dracut.install
+popd

@@ -1,3 +1,5 @@
+%global _default_patch_fuzz 2
+
 %if 0%{?fedora} || 0%{?rhel} <= 8
 %bcond_without deprecated
 %else
@@ -5,7 +7,7 @@
 %endif
 
 Name:    bluez
-Version: 5.81
+Version: 5.87
 Release: 2%{?dist}.bazzite.{{{ git_dir_version }}}
 Summary: Bluetooth utilities
 License: GPL-2.0-or-later
@@ -13,7 +15,8 @@ URL:     http://www.bluez.org/
 
 Source0: https://www.kernel.org/pub/linux/bluetooth/%{name}-%{version}.tar.xz
 
-Patch1:  bluez-5.81-fixes.patch
+# https://git.kernel.org/pub/scm/bluetooth/bluez.git/commit/?id=5bc6aa79e53700d56fc1f9f9364573ba4c78da65
+Patch1: 0001-adapter-Fix-crash-on-dev_disconnected.patch 
 
 # Valve
 Patch10: 0001-valve-bluetooth-config.patch
@@ -26,7 +29,7 @@ Patch16: 0021-valve-bluetooth-ll-privacy.patch
 
 BuildRequires: dbus-devel >= 1.6
 BuildRequires: glib2-devel
-BuildRequires: libell-devel >= 0.37
+BuildRequires: libell-devel >= 0.39
 BuildRequires: libical-devel
 BuildRequires: make
 BuildRequires: readline-devel
@@ -78,13 +81,12 @@ Obsoletes: bluez < 5.55-2
 
 %description deprecated
 Bluetooth applications that have bee deprecated by upstream. They have been
-replaced by funcationality in the core bluetoothctl and will eventually
+replaced by functionality in the core bluetoothctl and will eventually
 be dropped by upstream. Utilities include:
 	- ciptool
 	- gatttool
 	- hciattach
 	- hciconfig
-	- hcidump
 	- hcitool
 	- meshctl
 	- rfcomm
@@ -176,10 +178,16 @@ install -m0755 attrib/gatttool $RPM_BUILD_ROOT%{_bindir}
 # Red Hat Bugzilla bug #1699680
 install -m0755 tools/avinfo $RPM_BUILD_ROOT%{_bindir}
 
+# "make install" fails to install avinfo            
+install -m0755 tools/btsnoop $RPM_BUILD_ROOT%{_bindir}
+
 # btmgmt is not installed by "make install", but it is useful for debugging
 # some issues and to set the MAC address on HCIs which don't have their
 # MAC address configured 
 install -m0755 tools/btmgmt $RPM_BUILD_ROOT%{_bindir}
+
+# btmgmt man page needs manual install in 5.86+
+install -m0644 doc/btmgmt.1 $RPM_BUILD_ROOT%{_mandir}/man1/
 
 # Remove libtool archive
 find $RPM_BUILD_ROOT -name '*.la' -delete
@@ -239,7 +247,7 @@ install emulator/btvirt ${RPM_BUILD_ROOT}/%{_libexecdir}/bluetooth/
 %files
 %license COPYING
 %doc AUTHORS ChangeLog
-# bluetooth.service expects configuraton directory to be read only
+# bluetooth.service expects configuration directory to be read only
 # https://github.com/bluez/bluez/issues/329#issuecomment-1102459104
 %attr(0555, root, root) %dir %{_sysconfdir}/bluetooth
 %config(noreplace) %{_sysconfdir}/bluetooth/main.conf
@@ -277,7 +285,6 @@ install emulator/btvirt ${RPM_BUILD_ROOT}/%{_libexecdir}/bluetooth/
 %{_bindir}/gatttool
 %{_bindir}/hciattach
 %{_bindir}/hciconfig
-%{_bindir}/hcidump
 %{_bindir}/hcitool
 %{_bindir}/meshctl
 %{_bindir}/rfcomm
@@ -285,7 +292,6 @@ install emulator/btvirt ${RPM_BUILD_ROOT}/%{_libexecdir}/bluetooth/
 %{_mandir}/man1/ciptool.1.*
 %{_mandir}/man1/hciattach.1.*
 %{_mandir}/man1/hciconfig.1.*
-%{_mandir}/man1/hcidump.1.*
 %{_mandir}/man1/hcitool.1.*
 %{_mandir}/man1/rfcomm.1.*
 %{_mandir}/man1/sdptool.1.*
@@ -298,6 +304,7 @@ install emulator/btvirt ${RPM_BUILD_ROOT}/%{_libexecdir}/bluetooth/
 
 %files libs-devel
 %doc doc/*txt
+%{_bindir}/btsnoop
 %{_bindir}/isotest
 %{_bindir}/l2test
 %{_bindir}/l2ping
@@ -306,8 +313,11 @@ install emulator/btvirt ${RPM_BUILD_ROOT}/%{_libexecdir}/bluetooth/
 %{_mandir}/man1/l2ping.1.*
 %{_mandir}/man1/rctest.1.*
 %{_mandir}/man5/org.bluez.*.5.*
+%{_mandir}/man7/btsnoop.7.*
 %{_mandir}/man7/hci.7.*
+%{_mandir}/man7/iso.7.*
 %{_mandir}/man7/l2cap.7.*
+%{_mandir}/man7/mgmt.7.*
 %{_mandir}/man7/rfcomm.7.*
 %{_mandir}/man7/sco.7.*
 %{_libdir}/libbluetooth.so
@@ -343,6 +353,25 @@ install emulator/btvirt ${RPM_BUILD_ROOT}/%{_libexecdir}/bluetooth/
 %{_userunitdir}/obex.service
 
 %changelog
+* Wed Sep 24 2025 Bastien Nocera <bnocera@redhat.com> - 5.84-2
++ bluez-5.84-2
+- Fix Bluetooth LE audio
+
+* Fri Sep 19 2025 Bastien Nocera <bnocera@redhat.com> - 5.84-1
+- Update to 5.84
+
+* Wed Jul 23 2025 Fedora Release Engineering <releng@fedoraproject.org> - 5.83-3
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_43_Mass_Rebuild
+
+* Wed Jul 09 2025 Peter Robinson <pbrobinson@fedoraproject.org> - 5.83-2
+- Fix for single commands without BT shell
+
+* Mon Jun 02 2025 Bastien Nocera <bnocera@redhat.com> - 5.83-1
+- Update to 5.83
+
+* Wed Apr 02 2025 Peter Robinson <pbrobinson@fedoraproject.org> - 5.82-1
+- Update to 5.82
+
 * Wed Apr 02 2025 Peter Robinson <pbrobinson@fedoraproject.org> - 5.81-2
 - Upstream patches to fix broken 5.81
 
